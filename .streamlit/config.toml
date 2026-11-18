@@ -1,0 +1,13 @@
+[client]
+toolbarMode = "minimal"   # hides the Deploy button and dev menu
+
+[browser]
+gatherUsageStats = false
+
+# Colors matched to ziaahmed.dev
+[theme]
+base = "dark"
+primaryColor = "#BFF747"
+backgroundColor = "#1A1A1A"
+secondaryBackgroundColor = "#242424"
+textColor = "#FFFFFF"

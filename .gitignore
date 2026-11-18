@@ -1,0 +1,21 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Python / virtualenv
+.venv/
+__pycache__/
+*.pyc
+
+# PandasAI runtime output
+exports/
+pandasai.log
+cache/
+names_survived.csv
+
+# Editor / OS / local tooling
+.DS_Store
+.vscode/
+.idea/
+.claude/
