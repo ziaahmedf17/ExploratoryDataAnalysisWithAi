@@ -1,5 +1,7 @@
-# Tested together on Python 3.9 (local) and 3.11 (Streamlit Community Cloud).
-# Use Python 3.11 on Streamlit Cloud: pandas 1.5.3 has no wheels for 3.12+.
+# Runtime: Python 3.11 (select it on Streamlit Community Cloud under Advanced settings).
+# pandas 1.5.3 (required by pandasai 2.3.2) has no wheels for Python 3.12+.
+# Also tested locally on Python 3.9. No system packages (packages.txt) are needed:
+# every dependency installs from a prebuilt manylinux wheel.
 
 # App
 streamlit==1.50.0
@@ -14,6 +16,7 @@ openai==1.109.1        # pandasai 2.3.2 requires openai<2
 pandas==1.5.3
 numpy==1.26.4
 matplotlib==3.7.5
+cycler==0.12.1          # imported directly for the chart color cycle
 
 # File formats: Excel in/out, PDF export
 openpyxl==3.1.5

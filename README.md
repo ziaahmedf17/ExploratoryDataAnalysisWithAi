@@ -11,6 +11,8 @@ Upload a CSV or Excel file and ask something like *"average fare grouped by sex"
 ![PandasAI](https://img.shields.io/badge/pandasai-2.3.2-121211?style=for-the-badge&logo=pandas&logoColor=97C459)
 ![LLM](https://img.shields.io/badge/llm-litellm-121211?style=for-the-badge&logoColor=97C459)
 
+**[Live demo](https://YOUR-APP-NAME.streamlit.app)** (placeholder: replace with your Streamlit Cloud URL after deploying)
+
 <img src="docs/screenshots/hero.png" alt="EDA Terminal: command bar, suggestion chips, and answer blocks with generated pandas code beside the output" width="920">
 
 </div>
@@ -35,6 +37,17 @@ Upload a CSV or Excel file and ask something like *"average fare grouped by sex"
 | **Private by default** | When deployed, visitors must enter `APP_PASSWORD` before they can use your API key. |
 | **Any LLM** | OpenAI, Anthropic, Gemini and more, through a small [LiteLLM](https://docs.litellm.ai/) adapter ([`pandasai_v2_adapters.py`](pandasai_v2_adapters.py)). |
 
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| UI | [Streamlit](https://streamlit.io) 1.50, custom terminal theme (Inter + JetBrains Mono) |
+| AI analysis | [PandasAI v2](https://docs.pandas-ai.com/v2/library) 2.3.2 (`SmartDataframe`): turns questions into pandas code and runs it |
+| LLM | [OpenAI](https://platform.openai.com) `gpt-4.1-mini` by default, called through [LiteLLM](https://docs.litellm.ai/) so other providers work too |
+| Data | pandas 1.5.3, NumPy, matplotlib (charts) |
+| Exports | openpyxl (Excel in and out), xlrd (legacy `.xls`), fpdf2 (PDF) |
+| Runtime | **Python 3.11** on Streamlit Community Cloud (3.9 to 3.11 locally) |
+
 ## Screenshots
 
 **Answer blocks**: generated pandas code on the left, typed output on the right.
@@ -58,7 +71,7 @@ Upload a CSV or Excel file and ask something like *"average fare grouped by sex"
 
 ## Quick start
 
-**1. Clone the repo and install the dependencies** (Python 3.9 to 3.11)
+**1. Clone the repo and install the dependencies** (Python 3.11 recommended; 3.9 to 3.11 work. 3.12+ does not, because pandas 1.5.3 has no wheels for it)
 
 ```bash
 git clone https://github.com/ziaahmedf17/ExploratoryDataAnalysisWithAi.git
@@ -149,7 +162,8 @@ The goal is for the AI to write **pandas code on the dataframe**. PandasAI v3 ca
 .
 ├── app.py                          # EDA Terminal: UI, upload, query blocks, exports
 ├── pandasai_v2_adapters.py         # LiteLLM LLM + typed response parser for PandasAI v2
-├── requirements.txt                # Pinned dependencies (tested on Python 3.9 and 3.11)
+├── requirements.txt                # Pinned dependencies (runtime: Python 3.11)
+├── .python-version                 # 3.11, for pyenv / uv
 ├── .env.example                    # API key + model template (local runs)
 ├── .streamlit/config.toml          # Terminal theme, fonts, hidden toolbar
 ├── .streamlit/secrets.toml.example # Secrets template for Streamlit Cloud

@@ -11,6 +11,7 @@ __pycache__/
 
 # PandasAI runtime output
 exports/
+charts/
 pandasai.log
 cache/
 names_survived.csv
