@@ -11,8 +11,6 @@ Upload a CSV or Excel file and ask something like *"average fare grouped by sex"
 ![PandasAI](https://img.shields.io/badge/pandasai-2.3.2-121211?style=for-the-badge&logo=pandas&logoColor=97C459)
 ![LLM](https://img.shields.io/badge/llm-litellm-121211?style=for-the-badge&logoColor=97C459)
 
-**[Live demo](https://YOUR-APP-NAME.streamlit.app)** (placeholder: replace with your Streamlit Cloud URL after deploying)
-
 <img src="docs/screenshots/hero.png" alt="EDA Terminal: command bar, suggestion chips, and answer blocks with generated pandas code beside the output" width="920">
 
 </div>
