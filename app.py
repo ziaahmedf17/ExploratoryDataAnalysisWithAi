@@ -1,4 +1,8 @@
-"""Chat with any CSV using PandasAI v3 + Streamlit."""
+"""Chat with any CSV/Excel file using PandasAI v2 (SmartDataframe) + Streamlit.
+
+PandasAI v2 is used deliberately: it generates plain pandas code on the dataframe
+(dfs[0]...). PandasAI v3 always routes data access through SQL (execute_sql_query).
+"""
 
 import base64
 import datetime
@@ -11,11 +15,12 @@ import time
 import traceback
 
 import pandas as pd
-import pandasai as pai
 import streamlit as st
 from dotenv import load_dotenv
 from fpdf import FPDF
-from pandasai_litellm import LiteLLM
+from pandasai import SmartDataframe
+
+from pandasai_v2_adapters import LiteLLM, TypedResponseParser
 
 load_dotenv(override=True)  # always pick up the latest .env values on rerun
 
@@ -70,15 +75,29 @@ st.markdown(
 
 # ---------------------------------------------------------------- LLM setup
 @st.cache_resource(show_spinner=False)
-def configure_llm(model: str) -> None:
-    """Register the LiteLLM-backed model with PandasAI (once per process)."""
-    pai.config.set({"llm": LiteLLM(model=model), "verbose": False})
+def get_llm(model: str) -> LiteLLM:
+    """One LiteLLM-backed PandasAI v2 LLM per model name."""
+    return LiteLLM(model=model)
 
 
-configure_llm(LLM_MODEL)
+def make_smart_df(df: pd.DataFrame) -> SmartDataframe:
+    return SmartDataframe(
+        df,
+        config={
+            "llm": get_llm(LLM_MODEL),
+            "response_parser": TypedResponseParser,  # keep result type for rendering
+            "enable_cache": False,      # always generate fresh code per question
+            "open_charts": False,       # never pop up a window on the server
+            "save_charts": False,
+            "verbose": False,
+        },
+    )
 
 
 # ---------------------------------------------------------------- data loading
+EXCEL_EXTS = (".xlsx", ".xls")
+
+
 def read_csv_with_fallback(raw: bytes) -> pd.DataFrame:
     """Read CSV bytes, trying utf-8 first and falling back to latin-1."""
     last_err = None
@@ -90,6 +109,27 @@ def read_csv_with_fallback(raw: bytes) -> pd.DataFrame:
     raise last_err  # latin-1 decodes any byte, so this is practically unreachable
 
 
+@st.cache_data(show_spinner=False)
+def excel_sheet_names(raw: bytes) -> list:
+    return pd.ExcelFile(io.BytesIO(raw)).sheet_names
+
+
+def read_table(raw: bytes, name: str, sheet=None) -> pd.DataFrame:
+    if name.lower().endswith(EXCEL_EXTS):
+        return pd.read_excel(io.BytesIO(raw), sheet_name=sheet or 0)
+    return read_csv_with_fallback(raw)
+
+
+def column_types(df: pd.DataFrame) -> pd.DataFrame:
+    return pd.DataFrame({
+        "column": df.columns,
+        "type": [str(t) for t in df.dtypes],
+        "non-null": df.notna().sum().values,
+        "missing": df.isna().sum().values,
+        "unique": [df[c].nunique(dropna=True) for c in df.columns],
+    })
+
+
 def reset_chat() -> None:
     st.session_state.messages = []
     st.session_state.in_flight = False
@@ -98,8 +138,8 @@ def reset_chat() -> None:
 st.session_state.setdefault("messages", [])
 st.session_state.setdefault("file_id", None)
 
-st.title("📊 Chat with your CSV")
-st.caption(f"Powered by PandasAI v3 · model: `{LLM_MODEL}`")
+st.title("📊 Chat with your Data")
+st.caption(f"Powered by PandasAI v2 (pandas code generation) · model: `{LLM_MODEL}`")
 
 def render_footer() -> None:
     year = datetime.date.today().year
@@ -113,7 +153,15 @@ def render_footer() -> None:
 
 
 with st.sidebar:
-    uploaded = st.file_uploader("Upload a CSV file", type=["csv"])
+    uploaded = st.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx", "xls"])
+    sheet = None
+    if uploaded is not None and uploaded.name.lower().endswith(EXCEL_EXTS):
+        try:
+            sheets = excel_sheet_names(uploaded.getvalue())
+            sheet = st.selectbox("Sheet", sheets) if len(sheets) > 1 else sheets[0]
+        except Exception as err:
+            st.error(f"Could not open `{uploaded.name}` as Excel: {err}")
+            st.stop()
     if st.button("Clear chat", width="stretch"):
         reset_chat()
     st.caption(
@@ -123,23 +171,26 @@ with st.sidebar:
     render_footer()
 
 if uploaded is None:
-    st.info("Upload a CSV file in the sidebar to get started.")
+    st.info("Upload a CSV or Excel file in the sidebar to get started.")
     render_footer()
     st.stop()
 
 raw_bytes = uploaded.getvalue()
-file_id = hashlib.md5(raw_bytes).hexdigest() + uploaded.name
+file_id = f"{hashlib.md5(raw_bytes).hexdigest()}:{uploaded.name}:{sheet}"
 
 # New file -> reset chat history and re-parse.
 if st.session_state.file_id != file_id:
     try:
-        pdf = read_csv_with_fallback(raw_bytes)
-    except Exception as err:  # malformed CSV, empty file, etc.
-        st.error(f"Could not read `{uploaded.name}` as CSV: {err}")
+        pdf = read_table(raw_bytes, uploaded.name, sheet)
+    except Exception as err:  # malformed file, empty file, etc.
+        st.error(f"Could not read `{uploaded.name}`: {err}")
+        st.stop()
+    if pdf.empty:
+        st.error(f"`{uploaded.name}` has no rows to analyse.")
         st.stop()
     st.session_state.file_id = file_id
     st.session_state.pdf = pdf
-    st.session_state.sdf = pai.DataFrame(pdf)
+    st.session_state.sdf = make_smart_df(pdf)
     reset_chat()
 
 pdf: pd.DataFrame = st.session_state.pdf
@@ -147,24 +198,31 @@ sdf = st.session_state.sdf
 
 # ---------------------------------------------------------------- file summary
 c1, c2, c3 = st.columns(3)
-c1.metric("File", uploaded.name)
+c1.metric("File", uploaded.name + (f" · {sheet}" if sheet else ""))
 c2.metric("Rows", f"{pdf.shape[0]:,}")
 c3.metric("Columns", f"{pdf.shape[1]:,}")
 with st.expander("Preview (first 10 rows)", expanded=True):
     st.dataframe(pdf.head(10), width="stretch")
+with st.expander("Column types"):
+    st.dataframe(column_types(pdf), width="stretch", hide_index=True)
 
 
 # ---------------------------------------------------------------- chat helpers
-def to_message(response) -> dict:
-    """Convert a PandasAI response into a serialisable chat message."""
-    rtype = getattr(response, "type", None)
-    value = getattr(response, "value", response)
+V2_FAILURE_PREFIX = "Unfortunately, I was not able to"
 
-    if rtype == "error":
-        return {"kind": "error", "content": friendly_error(getattr(response, "error", None))}
+
+def to_message(response) -> dict:
+    """Convert a PandasAI v2 result ({"type", "value"} via TypedResponseParser)."""
+    if isinstance(response, dict):
+        rtype, value = response.get("type"), response.get("value")
+    else:  # v2 reports failures as a plain string instead of raising
+        rtype, value = None, response
+
+    if isinstance(value, str) and value.startswith(V2_FAILURE_PREFIX):
+        return {"kind": "error", "content": friendly_error(value), "detail": value.strip()}
     if rtype == "dataframe" or isinstance(value, pd.DataFrame):
         return {"kind": "dataframe", "content": pd.DataFrame(value)}
-    if rtype == "chart":
+    if rtype in ("plot", "chart"):
         # Read bytes now: PandasAI reuses the same chart file path between questions.
         try:
             if isinstance(value, str) and value.startswith("data:image"):
@@ -277,7 +335,7 @@ def download_buttons(msg: dict, key: str) -> None:
                            icon=":material/image:", on_click="ignore", key=f"{key}-png")
 
 
-def render(msg: dict, key: str = "") -> None:
+def render_result(msg: dict, key: str = "") -> None:
     kind, content = msg["kind"], msg["content"]
     if kind == "dataframe":
         st.dataframe(content, width="stretch")
@@ -286,11 +344,29 @@ def render(msg: dict, key: str = "") -> None:
         st.image(content)
         download_buttons(msg, key)
     elif kind == "error":
-        st.warning(content)
+        st.error(content)
+        if msg.get("detail"):
+            with st.expander("Error details"):
+                st.code(msg["detail"], language="text")
     elif kind == "stopped":
         st.caption(content)
     else:
         st.markdown(content)
+
+
+def render(msg: dict, key: str = "") -> None:
+    """User messages render plainly; answers get Result / Code tabs."""
+    if msg["role"] == "user" or msg["kind"] == "stopped":
+        render_result(msg, key)
+        return
+    result_tab, code_tab = st.tabs([":material/insights: Result", ":material/code: Generated Code"])
+    with result_tab:
+        render_result(msg, key)
+    with code_tab:
+        if msg.get("code"):
+            st.code(msg["code"], language="python")
+        else:
+            st.caption("No code was generated for this answer.")
 
 
 # ---------------------------------------------------------------- chat UI
@@ -299,12 +375,19 @@ def run_chat_in_background(df, query: str, question: str) -> dict:
     box: dict = {}
 
     def worker():
+        # PandasAI v2 records code on the agent via callbacks. Clear it first so a
+        # failed question can't show the previous question's code. (Note: in 2.3.2
+        # SmartDataframe.last_code_generated mistakenly returns the executed code,
+        # so read both values from the agent directly.)
+        agent = df._agent
+        agent.last_code_generated = agent.last_code_executed = None
         try:
             msg = to_message(df.chat(query))
             attach_exports(msg, question)
         except Exception as err:
             traceback.print_exc()
-            msg = {"kind": "error", "content": friendly_error(err)}
+            msg = {"kind": "error", "content": friendly_error(err), "detail": str(err)}
+        msg["code"] = agent.last_code_executed or agent.last_code_generated
         box["answer"] = msg
 
     threading.Thread(target=worker, daemon=True).start()

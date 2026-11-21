@@ -2,13 +2,13 @@
 
 # 📊 Chat with your CSV
 
-**Exploratory data analysis in plain English, powered by [PandasAI v3](https://docs.pandas-ai.com/v3/introduction) and Streamlit.**
+**Exploratory data analysis in plain English, powered by [PandasAI v2](https://docs.pandas-ai.com/v2/library) and Streamlit. The AI writes real **pandas** code for every answer.**
 
 Upload any CSV, ask questions like *“total revenue by region as a bar chart”*, and get answers as text, tables or charts. You can download the results as CSV, Excel, PDF or PNG.
 
-![Python](https://img.shields.io/badge/Python-3.9%2B-1A1A1A?style=for-the-badge&logo=python&logoColor=BFF747)
+![Python](https://img.shields.io/badge/Python-3.9--3.11-1A1A1A?style=for-the-badge&logo=python&logoColor=BFF747)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.50-1A1A1A?style=for-the-badge&logo=streamlit&logoColor=BFF747)
-![PandasAI](https://img.shields.io/badge/PandasAI-v3-1A1A1A?style=for-the-badge&logoColor=BFF747)
+![PandasAI](https://img.shields.io/badge/PandasAI-2.3.2-1A1A1A?style=for-the-badge&logoColor=BFF747)
 ![LiteLLM](https://img.shields.io/badge/LLM-LiteLLM-1A1A1A?style=for-the-badge&logoColor=BFF747)
 
 <img src="docs/screenshots/upload-preview.png" alt="Upload a CSV and preview it" width="900">
@@ -21,14 +21,15 @@ Upload any CSV, ask questions like *“total revenue by region as a bar chart”
 
 | | |
 |---|---|
-| 📁 **Any CSV, no hardcoded data** | Upload from the browser. UTF‑8 is tried first, with an automatic **latin‑1 fallback** for messy files. |
-| 🔎 **Instant overview** | File name, rows × columns and a preview of the first rows. |
+| 📁 **CSV or Excel, no hardcoded data** | Upload `.csv`, `.xlsx` or `.xls` from the browser (with a sheet picker for multi-sheet workbooks). CSVs try UTF‑8 first, with an automatic **latin‑1 fallback**. |
+| 🔎 **Instant overview** | File name, rows × columns, **column types** (dtype, missing, unique) and a preview of the first rows. |
+| 🧑‍💻 **See the generated code** | Every answer has **Result / Generated Code** tabs showing the exact **pandas** code PandasAI wrote and ran on `dfs[0]` (`last_code_executed`), kept in chat history. |
 | 💬 **Natural-language chat** | Ask questions in plain English. Chat history is kept per session and **resets when you upload a new file**. |
 | 🧠 **Smart answer rendering** | Numbers and text are formatted cleanly, tables use `st.dataframe` and charts use `st.image`. |
 | ⬇️ **One-click downloads** | Every table can be downloaded as **CSV, Excel or PDF**, and every chart as **PNG**. |
 | ⏹️ **Stop button** | Cancel a long-running question at any time. |
-| 🛡️ **Friendly errors** | Failures from PandasAI or the LLM show a helpful message instead of crashing the app. |
-| 🔌 **Any LLM** | Works with OpenAI, Anthropic, Gemini and more via [`pandasai-litellm`](https://docs.pandas-ai.com/v3/large-language-models). |
+| 🛡️ **Friendly errors** | Failures from PandasAI or the LLM show an `st.error` message with expandable details instead of crashing the app. |
+| 🔌 **Any LLM** | Works with OpenAI, Anthropic, Gemini and more through a small [LiteLLM](https://docs.litellm.ai/) adapter ([`pandasai_v2_adapters.py`](pandasai_v2_adapters.py)). |
 
 ## 📸 Screenshots
 
@@ -96,11 +97,16 @@ The model is any [LiteLLM model string](https://docs.litellm.ai/docs/providers).
 - *Which month had the highest sales?*
 - *Make a PDF of the product and revenue columns*. You'll get a table with download buttons.
 
+## 🤔 Why PandasAI v2 and not v3?
+
+The goal is for the AI to generate **pandas code on the dataframe**. PandasAI v3 can't do that: it routes all data access through SQL on DuckDB, and its code validator rejects any program that doesn't call `execute_sql_query` (`ExecuteSQLQueryNotUsed`). Even with explicit "pandas only, never SQL" instructions, all 5 test queries (average, group by, filter, top N, chart) still loaded data with `execute_sql_query("SELECT * FROM …")`. PandasAI v2's `SmartDataframe` generates plain pandas code on `dfs[0]`, and the same 5 queries produced 0 SQL.
+
 ## 🗂️ Project structure
 
 ```
 .
 ├── app.py                 # Streamlit app (upload, chat, rendering, exports)
+├── pandasai_v2_adapters.py # LiteLLM LLM + typed response parser for PandasAI v2
 ├── requirements.txt       # Python dependencies
 ├── .env.example           # Template for your API key + model
 ├── .streamlit/config.toml # Theme + hides the Deploy button
@@ -110,9 +116,9 @@ The model is any [LiteLLM model string](https://docs.litellm.ai/docs/providers).
 
 ## 🛠️ How it works
 
-1. The uploaded file is read with `pandas.read_csv` (utf‑8 → latin‑1 fallback) and wrapped in `pai.DataFrame(...)`.
+1. The uploaded file is read with `pandas.read_csv` (utf‑8 → latin‑1 fallback) or `pandas.read_excel`, and wrapped in a PandasAI v2 `SmartDataframe`.
 2. Each question goes to `df.chat()`, which runs in a background thread so the **Stop** button stays responsive.
-3. PandasAI writes and runs SQL/Python against your data. The app checks the response type (`number`, `string`, `dataframe` or `chart`) and renders it accordingly.
+3. PandasAI generates **pandas** code (`dfs[0].groupby(...)`, filters, `sort_values`, matplotlib…) and executes it on your dataframe. The app shows that code (`last_code_executed`) in the **Generated Code** tab and renders the result by type (`number`, `string`, `dataframe` or `plot`).
 4. Table answers are turned into CSV, Excel (`openpyxl`) and PDF (`fpdf2`) files in memory, ready to download.
 
 ---
