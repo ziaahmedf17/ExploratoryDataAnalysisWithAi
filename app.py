@@ -7,24 +7,65 @@ PandasAI v2 is used deliberately: it generates plain pandas code on the datafram
 import base64
 import datetime
 import hashlib
+import hmac
 import io
 import os
 import re
 import threading
 import time
 import traceback
+from pathlib import Path
 
-import pandas as pd
-import streamlit as st
-from dotenv import load_dotenv
-from fpdf import FPDF
-from pandasai import SmartDataframe
+# ---------------------------------------------------------------- runtime folders
+# PandasAI v2 writes charts to <workspace>/exports/charts and cache files to
+# <workspace>/cache. Pin the workspace to this app's folder (so it doesn't depend
+# on the working directory) and create the folders up front.
+APP_DIR = Path(__file__).resolve().parent
+os.environ.setdefault("PANDASAI_WORKSPACE", str(APP_DIR))
+os.environ.setdefault("MPLBACKEND", "Agg")  # headless matplotlib (servers, threads)
+for _folder in ("exports/charts", "cache"):
+    (APP_DIR / _folder).mkdir(parents=True, exist_ok=True)
 
-from pandasai_v2_adapters import LiteLLM, TypedResponseParser
+import pandas as pd  # noqa: E402
+import streamlit as st  # noqa: E402
+from dotenv import load_dotenv  # noqa: E402
+from fpdf import FPDF  # noqa: E402
+from pandasai import SmartDataframe  # noqa: E402
 
-load_dotenv(override=True)  # always pick up the latest .env values on rerun
+from pandasai_v2_adapters import LiteLLM, TypedResponseParser  # noqa: E402
 
-LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4.1-mini")
+
+# ---------------------------------------------------------------- settings / secrets
+def _load_secrets() -> dict:
+    """st.secrets as a plain dict; empty when no secrets.toml exists (local runs)."""
+    try:
+        return {k: v for k, v in st.secrets.items()}
+    except Exception:
+        return {}
+
+
+# Local runs: .env -> os.environ. Deployed runs: st.secrets wins over everything.
+load_dotenv(APP_DIR / ".env", override=True)
+SECRETS = _load_secrets()
+
+# LiteLLM reads provider keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, ...) from the
+# environment, so copy top-level secret values there (except the app password).
+for _name, _value in SECRETS.items():
+    if _name != "APP_PASSWORD" and isinstance(_value, (str, int, float)):
+        os.environ[_name] = str(_value)
+
+
+def get_setting(name: str, default=None):
+    """st.secrets first, then environment / .env, then the default."""
+    value = SECRETS.get(name)
+    if value not in (None, ""):
+        return str(value)
+    return os.getenv(name) or default
+
+
+LLM_MODEL = get_setting("LLM_MODEL", "gpt-4.1-mini")
+APP_PASSWORD = get_setting("APP_PASSWORD")
+API_KEY_FROM_SECRETS = any(k.endswith("_API_KEY") for k in SECRETS)
 
 # ---- Branding (edit these) ----
 OWNER_NAME = "Zia Ahmed"
@@ -59,6 +100,9 @@ st.markdown(
                  box-shadow: 0 6px 18px rgba(191, 247, 71, .25);}
       .stButton > button[kind="primary"] {background: var(--accent); color: #000; border-color: var(--accent);}
       .stButton > button[kind="primary"]:hover {background: #d4ff6e; color: #000;}
+      .stFormSubmitButton > button[kind="primaryFormSubmit"], .stFormSubmitButton > button[kind="primary"] {
+        background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600;}
+      .stFormSubmitButton > button:hover {background: #d4ff6e; color: #000;}
       /* Chat avatars */
       [data-testid="stChatMessageAvatarUser"] {background: #2e2e2e; color: var(--accent);}
       [data-testid="stChatMessageAvatarAssistant"] {background: var(--accent); color: #000;}
@@ -71,6 +115,42 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+# ---------------------------------------------------------------- password gate
+def password_gate() -> None:
+    """Stop the app until the visitor enters APP_PASSWORD.
+
+    - APP_PASSWORD set (st.secrets or .env): password required.
+    - Not set, but an API key comes from st.secrets (i.e. deployed): refuse to run,
+      so a forgotten password never exposes the API key to strangers.
+    - Not set and running locally from .env: no gate (local development).
+    """
+    if not APP_PASSWORD:
+        if API_KEY_FROM_SECRETS:
+            st.error("This app is locked: set `APP_PASSWORD` in the app's secrets to enable access.")
+            st.stop()
+        return
+    if st.session_state.get("authenticated"):
+        return
+
+    _, col, _ = st.columns([1, 1.2, 1])
+    with col:
+        st.markdown("## 🔒 Chat with your Data")
+        st.caption("This app is private. Enter the password to continue.")
+        with st.form("login", border=True):
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Unlock", type="primary", width="stretch")
+        if submitted:
+            if hmac.compare_digest(password.encode(), APP_PASSWORD.encode()):
+                st.session_state.authenticated = True
+                st.rerun()
+            time.sleep(1)  # slow down password guessing
+            st.error("Incorrect password.")
+    st.stop()
+
+
+password_gate()
 
 
 # ---------------------------------------------------------------- LLM setup
@@ -164,6 +244,9 @@ with st.sidebar:
             st.stop()
     if st.button("Clear chat", width="stretch"):
         reset_chat()
+    if APP_PASSWORD and st.button("Log out", icon=":material/logout:", width="stretch"):
+        st.session_state.clear()
+        st.rerun()
     st.caption(
         "Tip: ask for a table (e.g. *“show name and survived columns”*) "
         "and download it as CSV, Excel or PDF."

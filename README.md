@@ -79,6 +79,22 @@ streamlit run app.py
 
 Open **http://localhost:8501**, upload a CSV (try [`sample_data/sales_demo.csv`](sample_data/sales_demo.csv)) and start asking questions.
 
+## ☁️ Deploy to Streamlit Community Cloud
+
+1. Push this repo to GitHub, then go to [share.streamlit.io](https://share.streamlit.io) → **Create app** and pick the repo, branch `main` and main file `app.py`.
+2. Under **Advanced settings**, choose **Python 3.11**. Pandas 1.5.3, which PandasAI 2.3.2 requires, has no wheels for Python 3.12+.
+3. Paste your secrets (see [`.streamlit/secrets.toml.example`](.streamlit/secrets.toml.example)):
+
+   ```toml
+   APP_PASSWORD = "choose-a-strong-password"
+   OPENAI_API_KEY = "sk-..."
+   LLM_MODEL = "gpt-4.1-mini"
+   ```
+
+4. Deploy. Visitors must enter `APP_PASSWORD` before they can use the app, so strangers can't spend your API key. If an API key is set in secrets but `APP_PASSWORD` is missing, the app refuses to start.
+
+> Settings are read from `st.secrets` first, then `.env` / environment variables for local runs.
+
 ## 🔁 Using a different LLM
 
 The model is any [LiteLLM model string](https://docs.litellm.ai/docs/providers). Set `LLM_MODEL` and the matching key in `.env`:
@@ -108,8 +124,9 @@ The goal is for the AI to generate **pandas code on the dataframe**. PandasAI v3
 ├── app.py                 # Streamlit app (upload, chat, rendering, exports)
 ├── pandasai_v2_adapters.py # LiteLLM LLM + typed response parser for PandasAI v2
 ├── requirements.txt       # Python dependencies
-├── .env.example           # Template for your API key + model
+├── .env.example           # Template for your API key + model (local runs)
 ├── .streamlit/config.toml # Theme + hides the Deploy button
+├── .streamlit/secrets.toml.example # Secrets template for Streamlit Cloud
 ├── sample_data/           # Demo CSV to try the app
 └── docs/screenshots/      # Images used in this README
 ```

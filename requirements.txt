@@ -1,8 +1,21 @@
+# Tested together on Python 3.9 (local) and 3.11 (Streamlit Community Cloud).
+# Use Python 3.11 on Streamlit Cloud: pandas 1.5.3 has no wheels for 3.12+.
+
+# App
+streamlit==1.50.0
+python-dotenv==1.0.1
+
+# AI data analysis (PandasAI v2 generates pandas code; v3 forces SQL)
 pandasai==2.3.2
-litellm>=1.40
-streamlit>=1.40
-pandas==1.5.3  # pinned by pandasai 2.3.2
-python-dotenv>=1.0
-fpdf2>=2.7
-openpyxl>=3.1
-xlrd>=2.0
+litellm==1.80.0
+openai==1.109.1        # pandasai 2.3.2 requires openai<2
+
+# Data stack (pandas is pinned by pandasai 2.3.2; pandas 1.5.3 needs numpy<2)
+pandas==1.5.3
+numpy==1.26.4
+matplotlib==3.7.5
+
+# File formats: Excel in/out, PDF export
+openpyxl==3.1.5
+xlrd==2.0.2
+fpdf2==2.8.4
